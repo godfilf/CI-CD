@@ -1,0 +1,62 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "centos/8"
+  config.vm.box_version = "1905.1"
+
+  config.vm.provision "shell", inline: "echo Inizio Provisioning"
+    $script = <<-SCRIPT
+    sed -i 's/PasswordAuthentication\ no/PasswordAuthentication\ yes/g' /etc/ssh/sshd_config
+    systemctl restart sshd
+    SCRIPT
+
+    $yumpy = <<-SCRIPT
+      #yum update -y && yum upgrade -y
+      echo "Installo e configuro Python come default"
+      yum install -y python2 python36 curl
+      echo 2 | alternatives --config python
+      echo "Installo Moduli Docker"
+      python -m pip install docker_py
+      echo "Configuro Il LocalTime"
+      timedatectl set-local-rtc no
+      timedatectl set-timezone Europe/Rome
+      systemctl restart chronyd.service
+      chronyc makestep
+      hwclock --systohc
+      echo "Configuro Schede di Rete"
+#      yum -y install ethtool
+      ls -l /etc/sysconfig/network-scripts/ifcfg-eth* |awk '{print $9}'|while read line; do echo ETHTOOL_OPTS=\"speed 100 duplex full autoneg off\" >> $line; done
+    SCRIPT
+
+  config.vm.provision "shell",
+      inline: $script
+  config.vm.provision "shell",
+      inline: $yumpy
+
+  config.vm.provision "file", source: "/Users/michele.costa/.ssh/id_rsa.pub", destination: "/tmp/me.pub"
+  config.vm.provision "shell", inline: <<-SHELL
+    cat /tmp/me.pub >> /home/vagrant/.ssh/authorized_keys
+  SHELL
+
+  config.vm.provision :ansible do |ansible|
+    ansible.playbook = "../AnsiblePrj/run_customize.yml"
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    reboot
+  SHELL
+
+  config.vm.define "cent1" do |cent|
+    cent.vm.network "private_network", ip: "192.168.100.101"
+    cent.vm.provider :virtualbox do |vb|
+      vb.memory = 4096
+      vb.cpus = 1
+    end
+  end
+
+  config.vm.define "cent2" do |cent|
+    cent.vm.network "private_network", ip: "192.168.100.102"
+    cent.vm.provider :virtualbox do |vb|
+      vb.memory = 4096
+      vb.cpus = 1
+    end
+  end
+end
